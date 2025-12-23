@@ -1,0 +1,1327 @@
+form:
+  name: "W-2 Wage and Tax Statement"
+  form_id: "W-2"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "W2-CALC-001"
+    description: "Social Security tax withheld should equal 6.2% of capped Social Security wages."
+    formula: "expected = round(min(social_security_wages, SS_WAGE_BASE[year]) * 0.062, 2)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Social Security tax withheld does not match expected value."
+
+  - id: "W2-CALC-002"
+    description: "Medicare tax withheld (base) should equal 1.45% of Medicare wages."
+    formula: "expected = round(medicare_wages * 0.0145, 2)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Medicare tax withheld does not match expected value."
+
+constraints:
+  - id: "W2-CON-001"
+    description: "Year must be a valid integer in a sane range."
+    rule: "is_integer(year) and year >= 1900 and year <= CURRENT_YEAR + 1"
+    severity: "CRITICAL"
+    error_message: "Invalid tax year."
+
+  - id: "W2-CON-002"
+    description: "SSN must be present and correctly formatted."
+    rule: "matches_regex(ssn, '^(\\d{3}-\\d{2}-\\d{4}|\\d{9})$')"
+    severity: "CRITICAL"
+    error_message: "Invalid SSN format."
+
+  - id: "W2-CON-003"
+    description: "All monetary fields must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative monetary value detected."
+
+  - id: "W2-CON-004"
+    description: "wages and taxable_wages must match if both exist."
+    rule: "if_present(wages) and if_present(taxable_wages) => abs(wages - taxable_wages) <= 0.01"
+    severity: "ERROR"
+    error_message: "wages and taxable_wages disagree."
+
+structural_rules:
+  - id: "W2-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(profile_id) and present(employer_name) and present(employer_id) and present(employee_name) and present(ssn) and present(year)"
+    severity: "CRITICAL"
+    error_message: "Missing required W-2 identity fields."
+form:
+  name: "U.S. Individual Income Tax Return"
+  form_id: "1040"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "1040-CALC-001"
+    description: "Total income equals sum of all income components."
+    formula: "total_income = sum(income_components)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total income calculation is incorrect."
+
+  - id: "1040-CALC-002"
+    description: "Adjusted Gross Income equals total income minus adjustments."
+    formula: "adjusted_gross_income = total_income - adjustments_total"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "AGI calculation is incorrect."
+
+  - id: "1040-CALC-003"
+    description: "Taxable income equals AGI minus deductions, floored at zero."
+    formula: "taxable_income = max(0, adjusted_gross_income - deductions_taken)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Taxable income calculation is incorrect."
+
+constraints:
+  - id: "1040-CON-001"
+    description: "Standard deduction and itemized deductions are mutually exclusive."
+    rule: "not (present(standard_deduction) and present(itemized_deductions))"
+    severity: "ERROR"
+    error_message: "Cannot claim both standard and itemized deductions."
+
+  - id: "1040-CON-002"
+    description: "Refund and amount owed are mutually exclusive."
+    rule: "not (present(refund) and present(amount_owed))"
+    severity: "ERROR"
+    error_message: "Cannot have both refund and amount owed."
+
+structural_rules:
+  - id: "1040-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(primary_name) and present(ssn) and present(filing_status)"
+    severity: "CRITICAL"
+    error_message: "Missing required Form 1040 identity fields."
+
+form:
+  name: "Schedule 1 — Additional Income and Adjustments"
+  form_id: "1040-S1"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "S1-CALC-001"
+    description: "Additional income total equals sum of additional income items."
+    formula: "additional_income_total = sum(additional_income_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Additional income total is incorrect."
+
+  - id: "S1-CALC-002"
+    description: "Adjustments total equals sum of adjustment items."
+    formula: "adjustments_total = sum(adjustment_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Adjustments total is incorrect."
+
+constraints:
+  - id: "S1-CON-001"
+    description: "All Schedule 1 monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values detected on Schedule 1."
+form:
+  name: "Schedule 2 — Additional Taxes"
+  form_id: "1040-S2"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "S2-CALC-001"
+    description: "Additional taxes total equals sum of additional tax items."
+    formula: "additional_taxes_total = sum(additional_tax_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Additional taxes total is incorrect."
+
+constraints:
+  - id: "S2-CON-001"
+    description: "All Schedule 2 tax values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values detected on Schedule 2."
+form:
+  name: "Schedule 3 — Additional Credits and Payments"
+  form_id: "1040-S3"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "S3-CALC-001"
+    description: "Total nonrefundable credits equals sum of nonrefundable credit items."
+    formula: "total_nonrefundable_credits = sum(nonrefundable_credit_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Nonrefundable credits total is incorrect."
+
+  - id: "S3-CALC-002"
+    description: "Total refundable credits/payments equals sum of refundable credit items."
+    formula: "total_refundable_credits_or_payments = sum(refundable_credit_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Refundable credits/payments total is incorrect."
+
+constraints:
+  - id: "S3-CON-001"
+    description: "All Schedule 3 monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values detected on Schedule 3."
+form:
+  name: "Schedule A — Itemized Deductions"
+  form_id: "1040-SA"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "SA-CALC-001"
+    description: "Each section subtotal must equal sum of its line items."
+    formula: "section_subtotal = sum(section_line_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "A Schedule A section subtotal is incorrect."
+
+  - id: "SA-CALC-002"
+    description: "Itemized deductions total equals sum of all section subtotals."
+    formula: "itemized_deductions_total = sum(section_subtotals)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Itemized deductions total is incorrect."
+
+constraints:
+  - id: "SA-CON-001"
+    description: "All Schedule A monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values detected on Schedule A."
+form:
+  name: "Schedule B — Interest and Ordinary Dividends"
+  form_id: "1040-SB"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "SB-CALC-001"
+    description: "Interest total equals sum of interest item amounts."
+    formula: "interest_total = sum(interest_items[].amount)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Interest total is incorrect."
+
+  - id: "SB-CALC-002"
+    description: "Dividends total equals sum of ordinary dividend item amounts."
+    formula: "dividends_total = sum(dividend_items[].ordinary_dividends)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Dividends total is incorrect."
+
+constraints:
+  - id: "SB-CON-001"
+    description: "All Schedule B monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values detected on Schedule B."
+
+structural_rules:
+  - id: "SB-STR-001"
+    description: "Each interest item must include payer name and amount."
+    rule: "for_each(interest_items, present(payer_name) and present(amount))"
+    severity: "ERROR"
+    error_message: "Interest item missing payer name or amount."
+
+  - id: "SB-STR-002"
+    description: "Each dividend item must include payer name and ordinary dividends."
+    rule: "for_each(dividend_items, present(payer_name) and present(ordinary_dividends))"
+    severity: "ERROR"
+    error_message: "Dividend item missing payer name or ordinary dividends."
+form:
+  name: "Schedule R — Credit for the Elderly or the Disabled"
+  form_id: "1040-SR"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "SR-CALC-001"
+    description: "Income reduction total equals sum of all reduction components."
+    formula: "income_reduction_total = sum(income_reduction_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Income reduction total is incorrect."
+
+  - id: "SR-CALC-002"
+    description: "Net base amount equals base amount minus income reductions, floored at zero."
+    formula: "net_base_amount = max(0, base_amount - income_reduction_total)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Net base amount calculation is incorrect."
+
+  - id: "SR-CALC-003"
+    description: "Tentative credit equals net base amount multiplied by credit percentage."
+    formula: "tentative_credit = round(net_base_amount * credit_percentage, 2)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Tentative credit calculation is incorrect."
+
+constraints:
+  - id: "SR-CON-001"
+    description: "All Schedule R monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Schedule R."
+
+  - id: "SR-CON-002"
+    description: "Final credit cannot exceed tentative credit."
+    rule: "final_credit <= tentative_credit"
+    severity: "ERROR"
+    error_message: "Final credit exceeds tentative credit."
+
+structural_rules:
+  - id: "SR-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Schedule R identity fields."
+
+  - id: "SR-STR-002"
+    description: "Qualification flags must not be logically contradictory."
+    rule: "not (is_over_65 == false and is_disabled == false)"
+    severity: "ERROR"
+    error_message: "Schedule R indicates no qualifying elderly or disabled status."
+form:
+  name: "Schedule C — Profit or Loss From Business"
+  form_id: "1040-SC"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "SC-CALC-001"
+    description: "Gross income total equals gross receipts minus returns plus other income."
+    formula: "gross_income_total = gross_receipts - returns_and_allowances + other_income"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Gross income calculation is incorrect."
+
+  - id: "SC-CALC-002"
+    description: "Total expenses equal sum of all expense items."
+    formula: "expenses_total = sum(expense_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Expenses total is incorrect."
+
+  - id: "SC-CALC-003"
+    description: "Net profit equals gross income minus total expenses."
+    formula: "net_profit = gross_income_total - expenses_total"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Net profit calculation is incorrect."
+
+constraints:
+  - id: "SC-CON-001"
+    description: "All Schedule C monetary values except net profit must be non-negative."
+    rule: "all_money_fields_except(net_profit) >= 0"
+    severity: "ERROR"
+    error_message: "Negative expense or income values are not allowed."
+
+structural_rules:
+  - id: "SC-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Schedule C identity fields."
+form:
+  name: "Schedule SE — Self-Employment Tax"
+  form_id: "1040-SSE"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "SSE-CALC-001"
+    description: "Total self-employment income equals sum of all SE income sources."
+    formula: "total_se_income = sum(se_income_sources)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total self-employment income is incorrect."
+
+  - id: "SSE-CALC-002"
+    description: "Net earnings from self-employment equal total SE income multiplied by adjustment factor."
+    formula: "net_earnings = total_se_income * 0.9235"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Net earnings calculation is incorrect."
+
+  - id: "SSE-CALC-003"
+    description: "Total self-employment tax equals sum of Social Security and Medicare SE taxes."
+    formula: "total_se_tax = ss_se_tax + medicare_se_tax"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total self-employment tax is incorrect."
+
+  - id: "SSE-CALC-004"
+    description: "Deductible part of SE tax equals half of total SE tax."
+    formula: "deductible_se_tax = total_se_tax / 2"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Deductible SE tax calculation is incorrect."
+
+constraints:
+  - id: "SSE-CON-001"
+    description: "All Schedule SE monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Schedule SE."
+
+structural_rules:
+  - id: "SSE-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Schedule SE identity fields."
+form:
+  name: "Schedule F — Profit or Loss From Farming"
+  form_id: "1040-SF"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "SF-CALC-001"
+    description: "Gross farm income equals sum of all farm income items."
+    formula: "gross_farm_income = sum(farm_income_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Gross farm income is incorrect."
+
+  - id: "SF-CALC-002"
+    description: "Total farm expenses equal sum of all farm expense items."
+    formula: "total_expenses = sum(farm_expense_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total farm expenses is incorrect."
+
+  - id: "SF-CALC-003"
+    description: "Net farm profit equals gross farm income minus total expenses."
+    formula: "net_farm_profit = gross_farm_income - total_expenses"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Net farm profit calculation is incorrect."
+
+constraints:
+  - id: "SF-CON-001"
+    description: "All Schedule F monetary values except net farm profit must be non-negative."
+    rule: "all_money_fields_except(net_farm_profit) >= 0"
+    severity: "ERROR"
+    error_message: "Negative expense or income values are not allowed."
+
+structural_rules:
+  - id: "SF-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Schedule F identity fields."
+form:
+  name: "Form 8829 — Expenses for Business Use of Home"
+  form_id: "8829"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "8829-CALC-001"
+    description: "Business use percentage equals business square feet divided by total home square feet."
+    formula: "business_use_percentage = business_square_feet / total_home_square_feet"
+    tolerance: 0.0001
+    severity: "ERROR"
+    error_message: "Business use percentage calculation is incorrect."
+
+  - id: "8829-CALC-002"
+    description: "Total indirect expenses equal sum of indirect expense items."
+    formula: "total_indirect_expenses = sum(indirect_expense_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total indirect expenses are incorrect."
+
+  - id: "8829-CALC-003"
+    description: "Business portion of indirect expenses equals indirect expenses multiplied by business use percentage."
+    formula: "business_indirect_expenses = total_indirect_expenses * business_use_percentage"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Business indirect expenses calculation is incorrect."
+
+  - id: "8829-CALC-004"
+    description: "Allowable home office expenses equal direct expenses plus business portion of indirect expenses."
+    formula: "allowable_home_office_expenses = total_direct_expenses + business_indirect_expenses"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Allowable home office expenses calculation is incorrect."
+
+constraints:
+  - id: "8829-CON-001"
+    description: "Business square footage must not exceed total home square footage."
+    rule: "business_square_feet <= total_home_square_feet"
+    severity: "ERROR"
+    error_message: "Business square footage exceeds total home square footage."
+
+  - id: "8829-CON-002"
+    description: "Business use percentage must be between 0 and 1."
+    rule: "business_use_percentage >= 0 and business_use_percentage <= 1"
+    severity: "ERROR"
+    error_message: "Invalid business use percentage."
+
+structural_rules:
+  - id: "8829-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Form 8829 identity fields."
+form:
+  name: "Form 4562 — Depreciation and Amortization"
+  form_id: "4562"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "4562-CALC-001"
+    description: "Total current depreciation equals sum of current depreciation for all assets."
+    formula: "total_current_depreciation = sum(depreciation_assets[].current_depreciation)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total current depreciation is incorrect."
+
+  - id: "4562-CALC-002"
+    description: "Total amortization equals sum of current amortization amounts."
+    formula: "total_amortization = sum(amortization_assets[].current_amortization)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total amortization is incorrect."
+
+  - id: "4562-CALC-003"
+    description: "Total depreciation and amortization equals sum of depreciation and amortization totals."
+    formula: "total_depreciation_and_amortization = total_current_depreciation + total_amortization"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total depreciation and amortization is incorrect."
+
+constraints:
+  - id: "4562-CON-001"
+    description: "Prior depreciation for an asset must not exceed its cost."
+    rule: "for_each(depreciation_assets, prior_depreciation <= cost)"
+    severity: "ERROR"
+    error_message: "Prior depreciation exceeds asset cost."
+
+structural_rules:
+  - id: "4562-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Form 4562 identity fields."
+form:
+  name: "Form 3800 — General Business Credit"
+  form_id: "3800"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "3800-CALC-001"
+    description: "Total current year business credits equal sum of individual credits."
+    formula: "total_current_year_credits = sum(current_year_business_credits)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total current year business credits are incorrect."
+
+  - id: "3800-CALC-002"
+    description: "Allowed general business credit equals the lesser of tentative credit and credit limit."
+    formula: "allowed_general_business_credit = min(tentative_credit, credit_limit)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Allowed general business credit calculation is incorrect."
+
+constraints:
+  - id: "3800-CON-001"
+    description: "Allowed general business credit cannot exceed tentative credit."
+    rule: "allowed_general_business_credit <= tentative_credit"
+    severity: "ERROR"
+    error_message: "Allowed general business credit exceeds tentative credit."
+
+structural_rules:
+  - id: "3800-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Form 3800 identity fields."
+form:
+  name: "Form 3468 — Investment Credit"
+  form_id: "3468"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "3468-CALC-001"
+    description: "Total qualified investment equals sum of all qualified investment items."
+    formula: "total_qualified_investment = sum(qualified_investment_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total qualified investment is incorrect."
+
+  - id: "3468-CALC-002"
+    description: "Tentative investment credit equals total qualified investment multiplied by credit rate, if rate is stored."
+    formula: "tentative_investment_credit = total_qualified_investment * credit_rate"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Tentative investment credit calculation is incorrect."
+
+constraints:
+  - id: "3468-CON-001"
+    description: "Credit rate must be between 0 and 1 if present."
+    rule: "if_present(credit_rate) => credit_rate >= 0 and credit_rate <= 1"
+    severity: "ERROR"
+    error_message: "Invalid investment credit rate."
+
+  - id: "3468-CON-002"
+    description: "All Form 3468 monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Form 3468."
+
+structural_rules:
+  - id: "3468-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Form 3468 identity fields."
+form:
+  name: "Form 1099-NEC — Nonemployee Compensation"
+  form_id: "1099-NEC"
+  version: "parameterized_by_year"
+
+constraints:
+  - id: "1099NEC-CON-001"
+    description: "Nonemployee compensation must be non-negative."
+    rule: "nonemployee_compensation >= 0"
+    severity: "ERROR"
+    error_message: "Negative nonemployee compensation is not allowed."
+
+  - id: "1099NEC-CON-002"
+    description: "Federal income tax withheld must be non-negative and not exceed compensation."
+    rule: "federal_income_tax_withheld >= 0 and federal_income_tax_withheld <= nonemployee_compensation"
+    severity: "ERROR"
+    error_message: "Invalid federal income tax withholding on 1099-NEC."
+
+  - id: "1099NEC-CON-003"
+    description: "State tax withheld must not exceed state income if both are present."
+    rule: "if_present(state_income) and if_present(state_tax_withheld) => state_tax_withheld <= state_income"
+    severity: "ERROR"
+    error_message: "Invalid state tax withholding on 1099-NEC."
+
+structural_rules:
+  - id: "1099NEC-STR-001"
+    description: "Required payer and recipient identity fields must be present."
+    rule: "present(year) and present(payer_name) and present(payer_tin) and present(recipient_name) and present(recipient_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on 1099-NEC."
+form:
+  name: "Form 1099-MISC — Miscellaneous Information"
+  form_id: "1099-MISC"
+  version: "parameterized_by_year"
+
+constraints:
+  - id: "1099MISC-CON-001"
+    description: "All income box values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative income values are not allowed on 1099-MISC."
+
+  - id: "1099MISC-CON-002"
+    description: "Federal income tax withheld must be non-negative."
+    rule: "federal_income_tax_withheld >= 0"
+    severity: "ERROR"
+    error_message: "Negative federal withholding is not allowed on 1099-MISC."
+
+  - id: "1099MISC-CON-003"
+    description: "State tax withheld must not exceed state income if both are present."
+    rule: "if_present(state_income) and if_present(state_tax_withheld) => state_tax_withheld <= state_income"
+    severity: "ERROR"
+    error_message: "Invalid state tax withholding on 1099-MISC."
+
+structural_rules:
+  - id: "1099MISC-STR-001"
+    description: "Required payer and recipient identity fields must be present."
+    rule: "present(year) and present(payer_name) and present(payer_tin) and present(recipient_name) and present(recipient_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on 1099-MISC."
+form:
+  name: "Form 1099-K — Payment Card and Third-Party Network Transactions"
+  form_id: "1099-K"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "1099K-CALC-001"
+    description: "Gross amount equals sum of monthly gross amounts if monthly breakdown is provided."
+    formula: "gross_amount = sum(monthly_gross_amounts)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Gross amount does not equal sum of monthly gross amounts."
+
+constraints:
+  - id: "1099K-CON-001"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative monetary values are not allowed on 1099-K."
+
+  - id: "1099K-CON-002"
+    description: "Federal income tax withheld must not exceed gross amount."
+    rule: "federal_income_tax_withheld <= gross_amount"
+    severity: "ERROR"
+    error_message: "Federal withholding exceeds gross amount on 1099-K."
+
+structural_rules:
+  - id: "1099K-STR-001"
+    description: "Required payer and payee identity fields must be present."
+    rule: "present(year) and present(payer_name) and present(payer_tin) and present(payee_name) and present(payee_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on 1099-K."
+form:
+  name: "Form 1099-G — Certain Government Payments"
+  form_id: "1099-G"
+  version: "parameterized_by_year"
+
+constraints:
+  - id: "1099G-CON-001"
+    description: "All government payment amounts must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on 1099-G."
+
+  - id: "1099G-CON-002"
+    description: "Federal income tax withheld must be non-negative and not exceed total payments if total is present."
+    rule: "federal_income_tax_withheld >= 0 and federal_income_tax_withheld <= sum(payment_amounts)"
+    severity: "ERROR"
+    error_message: "Invalid federal withholding on 1099-G."
+
+structural_rules:
+  - id: "1099G-STR-001"
+    description: "Required payer and recipient identity fields must be present."
+    rule: "present(year) and present(payer_name) and present(payer_tin) and present(recipient_name) and present(recipient_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on 1099-G."
+form:
+  name: "Schedule E — Supplemental Income and Loss"
+  form_id: "1040-SE"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "SE-CALC-001"
+    description: "For each activity, total expenses equal sum of expense items."
+    formula: "activity.total_expenses = sum(activity.expense_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Activity expenses total is incorrect."
+
+  - id: "SE-CALC-002"
+    description: "For each activity, net income or loss equals total income minus total expenses."
+    formula: "activity.net_income_or_loss = activity.total_income - activity.total_expenses"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Activity net income or loss is incorrect."
+
+  - id: "SE-CALC-003"
+    description: "Total Schedule E income or loss equals sum of all activity net amounts and flow-through income."
+    formula: "total_schedule_e_income_or_loss = sum(activity.net_income_or_loss) + total_k1_income"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total Schedule E income or loss is incorrect."
+
+constraints:
+  - id: "SE-CON-001"
+    description: "All Schedule E monetary values except net income/loss must be non-negative."
+    rule: "all_money_fields_except(net_income_or_loss) >= 0"
+    severity: "ERROR"
+    error_message: "Negative income or expense values are not allowed on Schedule E."
+
+structural_rules:
+  - id: "SE-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Schedule E identity fields."
+form:
+  name: "Schedule D — Capital Gains and Losses"
+  form_id: "1040-SD"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "SD-CALC-001"
+    description: "Short-term capital total equals sum of short-term gain/loss items."
+    formula: "short_term_total = sum(short_term_gain_loss_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Short-term capital total is incorrect."
+
+  - id: "SD-CALC-002"
+    description: "Long-term capital total equals sum of long-term gain/loss items."
+    formula: "long_term_total = sum(long_term_gain_loss_items)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Long-term capital total is incorrect."
+
+  - id: "SD-CALC-003"
+    description: "Net capital gain or loss equals short-term total plus long-term total."
+    formula: "net_capital_gain_or_loss = short_term_total + long_term_total"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Net capital gain or loss calculation is incorrect."
+
+structural_rules:
+  - id: "SD-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Schedule D identity fields."
+form:
+  name: "Form 8949 — Sales and Other Dispositions of Capital Assets"
+  form_id: "8949"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "8949-CALC-001"
+    description: "For each transaction, gain or loss equals proceeds minus cost basis plus adjustments."
+    formula: "item.gain_or_loss = item.proceeds - item.cost_basis + item.adjustments"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Transaction gain or loss calculation is incorrect."
+
+  - id: "8949-CALC-002"
+    description: "Total proceeds equal sum of transaction proceeds."
+    formula: "total_proceeds = sum(items.proceeds)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total proceeds are incorrect."
+
+  - id: "8949-CALC-003"
+    description: "Total cost basis equals sum of transaction cost basis amounts."
+    formula: "total_cost_basis = sum(items.cost_basis)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total cost basis is incorrect."
+
+  - id: "8949-CALC-004"
+    description: "Total adjustments equal sum of transaction adjustments."
+    formula: "total_adjustments = sum(items.adjustments)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total adjustments are incorrect."
+
+  - id: "8949-CALC-005"
+    description: "Total gain or loss equals sum of transaction gains or losses."
+    formula: "total_gain_or_loss = sum(items.gain_or_loss)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total gain or loss is incorrect."
+
+constraints:
+  - id: "8949-CON-001"
+    description: "Proceeds and cost basis must be non-negative."
+    rule: "for_each(items, proceeds >= 0 and cost_basis >= 0)"
+    severity: "ERROR"
+    error_message: "Negative proceeds or cost basis detected."
+
+structural_rules:
+  - id: "8949-STR-001"
+    description: "Each transaction must include description and dates."
+    rule: "for_each(items, present(description) and present(date_acquired) and present(date_sold))"
+    severity: "ERROR"
+    error_message: "Transaction missing required descriptive fields."
+
+  - id: "8949-STR-002"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Form 8949 identity fields."
+form:
+  name: "Form 1099-INT — Interest Income"
+  form_id: "1099-INT"
+  version: "parameterized_by_year"
+
+constraints:
+  - id: "1099INT-CON-001"
+    description: "Interest income and related amounts must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on 1099-INT."
+
+  - id: "1099INT-CON-002"
+    description: "Early withdrawal penalty must not exceed interest income."
+    rule: "early_withdrawal_penalty <= interest_income"
+    severity: "ERROR"
+    error_message: "Early withdrawal penalty exceeds interest income."
+
+  - id: "1099INT-CON-003"
+    description: "Federal income tax withheld must not exceed interest income."
+    rule: "federal_income_tax_withheld <= interest_income"
+    severity: "ERROR"
+    error_message: "Federal withholding exceeds interest income."
+
+  - id: "1099INT-CON-004"
+    description: "State tax withheld must not exceed state income if both are present."
+    rule: "if_present(state_income) and if_present(state_tax_withheld) => state_tax_withheld <= state_income"
+    severity: "ERROR"
+    error_message: "Invalid state tax withholding on 1099-INT."
+
+structural_rules:
+  - id: "1099INT-STR-001"
+    description: "Required payer and recipient identity fields must be present."
+    rule: "present(year) and present(payer_name) and present(payer_tin) and present(recipient_name) and present(recipient_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on 1099-INT."
+form:
+  name: "Form 1099-DIV — Dividends and Distributions"
+  form_id: "1099-DIV"
+  version: "parameterized_by_year"
+
+constraints:
+  - id: "1099DIV-CON-001"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on 1099-DIV."
+
+  - id: "1099DIV-CON-002"
+    description: "Qualified dividends cannot exceed ordinary dividends if both are present."
+    rule: "if_present(qualified_dividends) and if_present(ordinary_dividends) => qualified_dividends <= ordinary_dividends"
+    severity: "ERROR"
+    error_message: "Qualified dividends exceed ordinary dividends."
+
+  - id: "1099DIV-CON-003"
+    description: "Federal withholding must not exceed ordinary dividends if both are present."
+    rule: "if_present(federal_income_tax_withheld) and if_present(ordinary_dividends) => federal_income_tax_withheld <= ordinary_dividends"
+    severity: "ERROR"
+    error_message: "Federal withholding exceeds ordinary dividends on 1099-DIV."
+
+  - id: "1099DIV-CON-004"
+    description: "State tax withheld must not exceed state income if both are present."
+    rule: "if_present(state_income) and if_present(state_tax_withheld) => state_tax_withheld <= state_income"
+    severity: "ERROR"
+    error_message: "Invalid state withholding on 1099-DIV."
+
+structural_rules:
+  - id: "1099DIV-STR-001"
+    description: "Required payer and recipient identity fields must be present."
+    rule: "present(year) and present(payer_name) and present(payer_tin) and present(recipient_name) and present(recipient_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on 1099-DIV."
+form:
+  name: "Form 1099-B — Proceeds From Broker and Barter Exchange Transactions"
+  form_id: "1099-B"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "1099B-CALC-001"
+    description: "If item gain/loss is provided along with proceeds, cost basis, and adjustments, it must match proceeds minus basis minus disallowed wash sale plus other adjustments."
+    formula: "item.gain_or_loss = item.proceeds - item.cost_basis - item.wash_sale_disallowed + item.other_adjustments"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "1099-B transaction gain/loss does not match proceeds, basis, and adjustments."
+
+  - id: "1099B-CALC-002"
+    description: "Total proceeds equal sum of proceeds across transactions if total is stored."
+    formula: "total_proceeds = sum(items.proceeds)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "1099-B total proceeds are incorrect."
+
+  - id: "1099B-CALC-003"
+    description: "Total cost basis equals sum of cost basis across transactions if total is stored."
+    formula: "total_cost_basis = sum(items.cost_basis)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "1099-B total cost basis is incorrect."
+
+  - id: "1099B-CALC-004"
+    description: "Total gain/loss equals sum of gains/losses across transactions if total is stored."
+    formula: "total_gain_or_loss = sum(items.gain_or_loss)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "1099-B total gain/loss is incorrect."
+
+constraints:
+  - id: "1099B-CON-001"
+    description: "Proceeds must be non-negative for all transactions."
+    rule: "for_each(items, proceeds >= 0)"
+    severity: "ERROR"
+    error_message: "Negative proceeds are not allowed on 1099-B."
+
+  - id: "1099B-CON-002"
+    description: "Cost basis must be non-negative if present."
+    rule: "for_each(items, if_present(cost_basis) => cost_basis >= 0)"
+    severity: "ERROR"
+    error_message: "Negative cost basis is not allowed on 1099-B."
+
+  - id: "1099B-CON-003"
+    description: "Wash sale disallowed amount must be non-negative if present."
+    rule: "for_each(items, if_present(wash_sale_disallowed) => wash_sale_disallowed >= 0)"
+    severity: "ERROR"
+    error_message: "Negative wash sale disallowed amount is not allowed on 1099-B."
+
+structural_rules:
+  - id: "1099B-STR-001"
+    description: "Required payer/broker and recipient identity fields must be present."
+    rule: "present(year) and present(payer_name) and present(payer_tin) and present(recipient_name) and present(recipient_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on 1099-B."
+form:
+  name: "Form 1099-R — Distributions From Pensions, Annuities, Retirement Plans, IRAs"
+  form_id: "1099-R"
+  version: "parameterized_by_year"
+
+constraints:
+  - id: "1099R-CON-001"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on 1099-R."
+
+  - id: "1099R-CON-002"
+    description: "Taxable amount cannot exceed gross distribution if both are present."
+    rule: "if_present(taxable_amount) and if_present(gross_distribution) => taxable_amount <= gross_distribution"
+    severity: "ERROR"
+    error_message: "Taxable amount exceeds gross distribution."
+
+  - id: "1099R-CON-003"
+    description: "Federal withholding cannot exceed gross distribution if both are present."
+    rule: "if_present(federal_income_tax_withheld) and if_present(gross_distribution) => federal_income_tax_withheld <= gross_distribution"
+    severity: "ERROR"
+    error_message: "Federal withholding exceeds gross distribution."
+
+structural_rules:
+  - id: "1099R-STR-001"
+    description: "Required payer and recipient identity fields must be present."
+    rule: "present(year) and present(payer_name) and present(payer_tin) and present(recipient_name) and present(recipient_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on 1099-R."
+
+  - id: "1099R-STR-002"
+    description: "If taxable amount is marked not determined, taxable_amount may be absent; otherwise taxable_amount should be present."
+    rule: "if_present(taxable_amount_not_determined) and taxable_amount_not_determined == true => allow_missing(taxable_amount)"
+    severity: "INFO"
+    error_message: "Taxable amount not determined; taxable_amount may be omitted."
+form:
+  name: "Form 8606 — Nondeductible IRAs"
+  form_id: "8606"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "8606-CALC-001"
+    description: "Total basis before distributions equals prior year basis plus current nondeductible contributions."
+    formula: "total_basis_before_distributions = prior_year_basis + current_year_nondeductible_contributions"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total IRA basis calculation is incorrect."
+
+  - id: "8606-CALC-002"
+    description: "Basis ratio equals total basis divided by sum of distributions and year-end IRA value."
+    formula: "basis_ratio = total_basis_before_distributions / (total_distributions + value_of_all_iras_end_of_year)"
+    tolerance: 0.0001
+    severity: "ERROR"
+    error_message: "Basis ratio calculation is incorrect."
+
+  - id: "8606-CALC-003"
+    description: "Nontaxable portion of distributions equals total distributions multiplied by basis ratio."
+    formula: "nontaxable_distribution_amount = total_distributions * basis_ratio"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Nontaxable distribution amount is incorrect."
+
+  - id: "8606-CALC-004"
+    description: "Taxable portion of distributions equals total distributions minus nontaxable portion."
+    formula: "taxable_distribution_amount = total_distributions - nontaxable_distribution_amount"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Taxable distribution amount is incorrect."
+
+constraints:
+  - id: "8606-CON-001"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Form 8606."
+
+  - id: "8606-CON-002"
+    description: "Basis ratio must be between 0 and 1."
+    rule: "basis_ratio >= 0 and basis_ratio <= 1"
+    severity: "ERROR"
+    error_message: "Invalid basis ratio."
+
+structural_rules:
+  - id: "8606-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Form 8606 identity fields."
+form:
+  name: "Form 8889 — Health Savings Accounts"
+  form_id: "8889"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "8889-CALC-001"
+    description: "Total HSA contributions equal sum of self and employer contributions."
+    formula: "total_hsa_contributions = hsa_contributions_self + hsa_contributions_employer"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total HSA contributions are incorrect."
+
+  - id: "8889-CALC-002"
+    description: "Taxable HSA distribution equals distributions minus qualified medical expenses, floored at zero."
+    formula: "taxable_hsa_distribution = max(0, hsa_distributions - qualified_medical_expenses)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Taxable HSA distribution is incorrect."
+
+  - id: "8889-CALC-003"
+    description: "Ending HSA balance equals prior balance plus contributions minus distributions."
+    formula: "ending_hsa_balance = prior_year_hsa_balance + total_hsa_contributions - hsa_distributions"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Ending HSA balance is incorrect."
+
+constraints:
+  - id: "8889-CON-001"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Form 8889."
+
+structural_rules:
+  - id: "8889-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Form 8889 identity fields."
+form:
+  name: "Form 5498 — IRA Contribution Information"
+  form_id: "5498"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "5498-CALC-001"
+    description: "Total contributions equal sum of all contribution components if total is stored."
+    formula: "total_contributions = sum(contribution_components)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total IRA contributions are incorrect."
+
+constraints:
+  - id: "5498-CON-001"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Form 5498."
+
+structural_rules:
+  - id: "5498-STR-001"
+    description: "Required trustee and participant identity fields must be present."
+    rule: "present(year) and present(trustee_name) and present(trustee_tin) and present(participant_name) and present(participant_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on Form 5498."
+form:
+  name: "Schedule 8812 — Credits for Qualifying Children and Other Dependents"
+  form_id: "8812"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "8812-CALC-001"
+    description: "Tentative child credit equals number of qualifying children multiplied by credit per child."
+    formula: "tentative_child_credit = qualifying_children_count * credit_per_child"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Tentative child credit calculation is incorrect."
+
+  - id: "8812-CALC-002"
+    description: "Tentative other dependent credit equals number of other dependents multiplied by credit per dependent."
+    formula: "tentative_other_dependent_credit = other_dependents_count * credit_per_other_dependent"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Tentative other dependent credit calculation is incorrect."
+
+  - id: "8812-CALC-003"
+    description: "Total tentative credit equals sum of child and other dependent credits."
+    formula: "total_tentative_credit = tentative_child_credit + tentative_other_dependent_credit"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total tentative credit is incorrect."
+
+constraints:
+  - id: "8812-CON-001"
+    description: "Refundable and nonrefundable credits together cannot exceed total tentative credit."
+    rule: "refundable_credit + nonrefundable_credit <= total_tentative_credit"
+    severity: "ERROR"
+    error_message: "Combined credits exceed total tentative credit."
+
+  - id: "8812-CON-002"
+    description: "Counts of children and dependents must be non-negative integers."
+    rule: "qualifying_children_count >= 0 and other_dependents_count >= 0"
+    severity: "ERROR"
+    error_message: "Invalid dependent counts on Schedule 8812."
+
+structural_rules:
+  - id: "8812-STR-001"
+    description: "Required
+form:
+  name: "Schedule EIC — Earned Income Credit"
+  form_id: "1040-SEIC"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "SEIC-CALC-001"
+    description: "Qualifying children count equals number of qualifying child entries."
+    formula: "qualifying_children_count = count(qualifying_children)"
+    tolerance: 0
+    severity: "ERROR"
+    error_message: "Qualifying children count is incorrect."
+
+constraints:
+  - id: "SEIC-CON-001"
+    description: "Months lived with taxpayer must be between 0 and 12 for each qualifying child."
+    rule: "for_each(qualifying_children, months_lived_with_taxpayer >= 0 and months_lived_with_taxpayer <= 12)"
+    severity: "ERROR"
+    error_message: "Invalid months lived with taxpayer on Schedule EIC."
+
+structural_rules:
+  - id: "SEIC-STR-001"
+    description: "Each qualifying child must include required identifying fields."
+    rule: "for_each(qualifying_children, present(name) and present(ssn) and present(relationship))"
+    severity: "ERROR"
+    error_message: "Missing required qualifying child information on Schedule EIC."
+
+  - id: "SEIC-STR-002"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Schedule EIC identity fields."
+form:
+  name: "Form 2441 — Child and Dependent Care Expenses"
+  form_id: "2441"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "2441-CALC-001"
+    description: "Total care expenses equal sum of care expenses for all qualified persons."
+    formula: "total_care_expenses = sum(qualified_persons[].care_expenses)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Total care expenses are incorrect."
+
+  - id: "2441-CALC-002"
+    description: "Tentative care credit equals allowable care expenses multiplied by credit rate, if stored."
+    formula: "tentative_care_credit = allowable_care_expenses * credit_rate"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Tentative care credit calculation is incorrect."
+
+constraints:
+  - id: "2441-CON-001"
+    description: "Allowable care expenses cannot exceed total care expenses."
+    rule: "allowable_care_expenses <= total_care_expenses"
+    severity: "ERROR"
+    error_message: "Allowable care expenses exceed total care expenses."
+
+  - id: "2441-CON-002"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Form 2441."
+
+structural_rules:
+  - id: "2441-STR-001"
+    description: "Each care provider must include identifying information and amount paid."
+    rule: "for_each(care_providers, present(provider_name) and present(provider_tin) and amount_paid >= 0)"
+    severity: "ERROR"
+    error_message: "Invalid care provider information on Form 2441."
+
+  - id: "2441-STR-002"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required Form 2441 identity fields."
+form:
+  name: "Form 1095-A — Health Insurance Marketplace Statement"
+  form_id: "1095-A"
+  version: "parameterized_by_year"
+
+calculations:
+  - id: "1095A-CALC-001"
+    description: "Annual enrollment premiums equal sum of monthly enrollment premiums if annual total is stored."
+    formula: "annual_enrollment_premiums = sum(coverage_months[].enrollment_premium)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Annual enrollment premiums are incorrect."
+
+  - id: "1095A-CALC-002"
+    description: "Annual benchmark premiums equal sum of monthly benchmark premiums if annual total is stored."
+    formula: "annual_benchmark_premiums = sum(coverage_months[].benchmark_premium)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Annual benchmark premiums are incorrect."
+
+  - id: "1095A-CALC-003"
+    description: "Annual advance premium tax credit equals sum of monthly advance credits if annual total is stored."
+    formula: "annual_advance_ptc = sum(coverage_months[].advance_premium_tax_credit)"
+    tolerance: 0.01
+    severity: "ERROR"
+    error_message: "Annual advance premium tax credit is incorrect."
+
+constraints:
+  - id: "1095A-CON-001"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Form 1095-A."
+
+  - id: "1095A-CON-002"
+    description: "Each coverage month must be between 1 and 12."
+    rule: "for_each(coverage_months, month >= 1 and month <= 12)"
+    severity: "ERROR"
+    error_message: "Invalid month value on Form 1095-A."
+
+structural_rules:
+  - id: "1095A-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(policy_number) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on Form 1095-A."
+form:
+  name: "Form 8962 — Premium Tax Credit"
+  form_id: "8962"
+  version: "parameterized_by_year"
+
+constraints:
+  - id: "8962-CON-001"
+    description: "Allowed premium tax credit and excess advance credit cannot both be positive."
+    rule: "not (allowed_premium_tax_credit > 0 and excess_advance_ptc > 0)"
+    severity: "ERROR"
+    error_message: "Both allowed and excess advance premium tax credit amounts are present."
+
+  - id: "8962-CON-002"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Form 8962."
+
+structural_rules:
+  - id: "8962-STR-001"
+    description: "Required identity fields must be present."
+    rule: "present(year) and present(taxpayer_id)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on Form 8962."
+form:
+  name: "Form 1099-C — Cancellation of Debt"
+  form_id: "1099-C"
+  version: "parameterized_by_year"
+
+constraints:
+  - id: "1099C-CON-001"
+    description: "All monetary values must be non-negative."
+    rule: "all_money_fields >= 0"
+    severity: "ERROR"
+    error_message: "Negative values are not allowed on Form 1099-C."
+
+  - id: "1099C-CON-002"
+    description: "Interest included must not exceed amount of debt canceled."
+    rule: "interest_included <= amount_of_debt_canceled"
+    severity: "ERROR"
+    error_message: "Interest included exceeds canceled debt amount."
+
+structural_rules:
+  - id: "1099C-STR-001"
+    description: "Required creditor and debtor identity fields must be present."
+    rule: "present(year) and present(creditor_name) and present(creditor_tin) and present(debtor_name) and present(debtor_tin)"
+    severity: "CRITICAL"
+    error_message: "Missing required identity fields on Form 1099-C."
